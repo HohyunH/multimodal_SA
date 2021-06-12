@@ -24,21 +24,25 @@ from keras.models import Sequential
 from keras.layers import Dense,Embedding,LSTM,Dropout,Bidirectional, Conv1D, GlobalMaxPooling1D, MaxPooling1D, Flatten, GRU
 from keras.utils import np_utils
 
+from keras.models import Model
+from keras.layers import Concatenate, Dense, LSTM, Input, concatenate
 
 ## training Bi-LSTM model
 def Bilstm_model(embedding_vectors, maxlen):
-    model = Sequential()
-    model.add(Embedding(embedding_vectors.shape[0],
-                        output_dim=embedding_vectors.shape[1],
-                        weights=[embedding_vectors],
-                        input_length=maxlen,
-                        trainable=False))
-    model.add(Bidirectional(LSTM(256, dropout = 0.5, return_sequences=True)))
-    model.add(Bidirectional(LSTM(128,  return_sequences = False)))
-    model.add(Dense(64))
-    model.add(Dropout(0.3))
-    model.add(Dense(1, activation='sigmoid'))
 
+    nlp_input = Input(shape=(maxlen,), name='nlp_input')
+    meta_input = Input(shape=(31,), name='meta_input')
+    x2 = Dense(64, activation='relu')(meta_input)
+    x2 = Dense(32, activation='relu')(x2)
+    emb = Embedding(output_dim=embedding_vectors.shape[1], input_dim=embedding_vectors.shape[0],
+                    weights=[embedding_vectors], input_length=maxlen)(nlp_input)
+    nlp_out = Bidirectional(LSTM(256, dropout=0.3, recurrent_dropout=0.3, kernel_regularizer=regularizers.l2(0.01)
+                                 , return_sequences=True))(emb)
+    nlp_out = Bidirectional(LSTM(128, return_sequences=False))(nlp_out)
+    x = concatenate([nlp_out, x2])
+    x = Dense(64, activation='relu')(x)
+    x = Dense(1, activation='sigmoid')(x)
+    model = Model(inputs=[nlp_input, meta_input], outputs=[x])
 
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc'])
 
@@ -53,16 +57,19 @@ def ssan(maxlen, vocab_size):
     dff = 32  # 포지션 와이즈 피드 포워드 신경망의 은닉층의 크기
 
     inputs = tf.keras.layers.Input(shape=(maxlen,))
+    meta_inputs = tf.keras.layers.Input(shape=(31,), name='meta_input')
+    x2 = tf.keras.layers.Dense(64, activation='relu')(meta_inputs)
+    x2 = tf.keras.layers.Dense(32, activation='relu')(x2)
     embedding_layer = TokenAndPositionEmbedding(maxlen, vocab_size, embedding_dim)
     x = embedding_layer(inputs)
     transformer_block = TransformerBlock(embedding_dim, num_heads, dff)
     x = transformer_block(x)
     x = tf.keras.layers.GlobalAveragePooling1D()(x)
-    x = tf.keras.layers.Dropout(0.1)(x)
-    x = tf.keras.layers.Dense(20, activation="relu")(x)
+    x = tf.keras.layers.concatenate([x, x2])
+    x = tf.keras.layers.Dense(30, activation="relu")(x)
     x = tf.keras.layers.Dropout(0.1)(x)
     outputs = tf.keras.layers.Dense(2, activation="softmax")(x)
-    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    model = tf.keras.Model(inputs=[inputs, meta_inputs], outputs=outputs)
     model.compile("adam", "sparse_categorical_crossentropy", metrics=["accuracy"])
 
     return model
@@ -89,29 +96,33 @@ if __name__ == '__main__':
 
     dataset = Wusinsa(embedding_size, windows, max_len, train)
     x_rvs_train, x_rvs_test, y_train, y_test, x_meta_train, x_meta_test = dataset.data_setting()
+
+    ## all of meta dummies
+    m_train = dataset.meta_data(x_meta_train)
+    m_test = dataset.meta_data(x_meta_test)
+
     X_train, X_test = dataset.preprocessing(x_rvs_train, x_rvs_test)
+    ## Bi-LSTM
     trn_tkns, test_tkns, w2v, vocab = dataset.word2vec(X_train, X_test)
     embedding_vectors = dataset.w2v_to_keras_weights(w2v, vocab)
+    ## SSAN
     trn_emb, test_emb = dataset.word_embeddings(X_train, X_test)
 
     if args.model == "bilstm":
         model = Bilstm_model(embedding_vectors=embedding_vectors, maxlen=max_len)
         model.summary()
-        es = keras.callbacks.EarlyStopping(monitor="val_acc", patience=3, restore_best_weights=True)
-        history = model.fit(trn_tkns, y_train, epochs=args.epochs, validation_split=0.2, batch_size=args.batch, verbose=1, callbacks=[es])
+        es = keras.callbacks.EarlyStopping(monitor="val_acc", patience=2, restore_best_weights=True)
+        history = model.fit([trn_tkns, m_train], y_train, epochs=args.epochs, validation_split=0.2, batch_size=args.batch, verbose=1, callbacks=[es])
 
-        print("\n 테스트 정확도: %.4f" % (model.evaluate(test_tkns, y_test)[1]))
-
-        PATH = './models/wusinsa_bilstm.pth'
-        model.save(PATH)
+        print("\n 테스트 정확도: %.4f" % (model.evaluate([test_tkns, m_test], y_test)[1]))
 
     elif args.model == "ssan":
 
         model = ssan(args.maxlen, len(vocab)+2)
 
-        history = model.fit(trn_emb, y_train, batch_size=args.batch, epochs=args.epochs, validation_split=0.2)
+        history = model.fit([trn_emb,m_train], y_train, batch_size=args.batch, epochs=args.epochs, validation_split=0.2)
         # history = model.fit(trn_tkns, y_train, batch_size=32, epochs=2, validation_data=(text_val_tok_pad, val_Y))
-        print("\n 테스트 정확도: %.4f" % (model.evaluate(test_tkns, y_test)[1]))
+        print("\n 테스트 정확도: %.4f" % (model.evaluate([test_tkns, m_test], y_test)[1]))
 
     else:
         print("Bert Not yet")

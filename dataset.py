@@ -41,12 +41,42 @@ class Wusinsa():
                                                             using_df['binary'], test_size=0.10, random_state=321)
 
         x_rvs_train = x_train['rvs'].reset_index()['rvs']
-        x_meta_train = x_train.reset_index()[['categories','meta_sizes','meta_brights','meta_colors', 'meta_thicks', "cus_sex", "cus_height","cus_weight"]]
+        x_meta_train = x_train.reset_index()[['categories', 'meta_sizes', 'meta_brights', 'meta_colors', 'meta_thicks', "cus_sex", "cus_height", "cus_weight"]]
 
         x_rvs_test = x_test['rvs'].reset_index()['rvs']
         x_meta_test = x_test.reset_index()[['categories', 'meta_sizes', 'meta_brights', 'meta_colors', 'meta_thicks', "cus_sex", "cus_height", "cus_weight"]]
 
         return x_rvs_train, x_rvs_test, np.array(y_train), np.array(y_test), x_meta_train, x_meta_test
+
+    def meta_onehot(self, using_data):
+        categorical = []
+        for key in using_data['categories']:
+            if "데님 팬츠" in key:
+                categorical.append(0)
+            elif "반팔 티셔츠" in key:
+                categorical.append(1)
+            elif "샌들" in key:
+                categorical.append(2)
+            elif "셔츠/블라우스" in key:
+                categorical.append(3)
+            elif "숏 팬츠" in key:
+                categorical.append(4)
+            elif "슈트 팬츠/슬랙스" in key:
+                categorical.append(5)
+            else:
+                categorical.append(6)
+        using_data['meta'] = categorical
+        return using_data
+
+    def meta_data(self, using_data):
+
+        df_1 = pd.get_dummies(using_data['categories'])
+
+        for cols in list(using_data.columns)[:-2]:
+            df_2 = pd.get_dummies(using_data[cols])
+            df_1 = pd.concat([df_1, df_2], axis=1)
+
+        return np.array(df_1)
 
     ## Tokenizing review
     def preprocessing(self, x_rvs_train, x_rvs_test):
@@ -128,11 +158,14 @@ if __name__ == "__main__":
 
     x_rvs_train, x_rvs_test, y_train, y_test, x_meta_train, x_meta_test = dataset.data_setting()
 
-    X_train, X_test = dataset.preprocessing(x_rvs_train, x_rvs_test)
+    # print(x_rvs_train, x_meta_train)
+    #
+    # X_train, X_test = dataset.preprocessing(x_rvs_train, x_rvs_test)
+    #
+    # trn_tkns, test_tkns, w2v, vocab = dataset.word2vec(X_train, X_test)
+    #
+    # embedding_vectors = dataset.w2v_to_keras_weights(w2v, vocab)
+    #
+    # trn_emb, test_emb = dataset.word_embeddings(X_train, X_test)
 
-    trn_tkns, test_tkns, w2v, vocab = dataset.word2vec(X_train, X_test)
-
-    embedding_vectors = dataset.w2v_to_keras_weights(w2v, vocab)
-
-    trn_emb, test_emb = dataset.word_embeddings(X_train, X_test)
-
+    print(dataset.meta_onehot(x_meta_train))
