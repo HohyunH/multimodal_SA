@@ -1,6 +1,9 @@
 # multimodal_SA
 2021-1 Database System Team project
 
+![image](https://user-images.githubusercontent.com/46701548/133446286-227d8c67-e509-433c-9550-027853d87fe1.png)
+
+
 main.py : training baseline models
 
 c_main.py : Simply by adding category information and learning.
